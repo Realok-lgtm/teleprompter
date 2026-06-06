@@ -1,6 +1,6 @@
 // Offline cache for Camera Teleprompter.
 // Bump CACHE when you change any cached file so phones pull the new version.
-const CACHE = "camprompter-v2";
+const CACHE = "camprompter-v3";
 const ASSETS = [
   "./",
   "./camera.html",
