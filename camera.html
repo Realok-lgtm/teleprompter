@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<title>Camera Teleprompter</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: rgba(26, 26, 31, 0.82);
+    --surface-2: rgba(54, 54, 62, 0.9);
+    --border: rgba(120, 120, 135, 0.35);
+    --text: #ffffff;
+    --text-dim: #b9b9c4;
+    --accent: #4f8cff;
+    --rec: #ff3b46;
+    --accent-text: #ffffff;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    position: fixed;
+    inset: 0;
+  }
+
+  /* ---------- CAMERA LAYER ---------- */
+  #cam {
+    position: fixed; inset: 0;
+    width: 100%; height: 100%;
+    object-fit: cover;
+    background: #000;
+    z-index: 0;
+  }
+  #cam.mirror { transform: scaleX(-1); }
+
+  /* dim scrim so text is always readable over bright video */
+  .scrim {
+    position: fixed; inset: 0; z-index: 1;
+    background: rgba(0,0,0,0.30);
+    pointer-events: none;
+    transition: background 0.25s ease;
+  }
+  .scrim.heavy { background: rgba(0,0,0,0.55); }
+
+  /* ---------- PROMPTER TEXT (overlaid on camera) ---------- */
+  .scroll-area { position: fixed; inset: 0; overflow: hidden; z-index: 2; }
+  .scroll-content {
+    padding: 50vh 7vw;
+    font-size: 44px;
+    line-height: 1.5;
+    font-weight: 700;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    outline: none;
+    caret-color: var(--accent);
+    cursor: text;
+    min-height: 100%;
+    color: #fff;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9);
+    text-align: center;
+  }
+  .scroll-content:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-dim);
+    font-weight: 600;
+  }
+
+  /* reading guide line at the eye-line near top-third */
+  .guide {
+    position: fixed; left: 0; right: 0; top: 38%;
+    height: 0; z-index: 2; pointer-events: none;
+    border-top: 2px solid rgba(79,140,255,0.55);
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .guide.show { opacity: 1; }
+  .guide::before, .guide::after {
+    content: ""; position: absolute; top: -6px;
+    border: 6px solid transparent;
+  }
+  .guide::before { left: 8px; border-left-color: rgba(79,140,255,0.7); }
+  .guide::after  { right: 8px; border-right-color: rgba(79,140,255,0.7); }
+
+  .fade { position: fixed; left: 0; right: 0; height: 14%; pointer-events: none; z-index: 2; }
+  .fade.top { top: 0; background: linear-gradient(rgba(0,0,0,0.55), transparent); }
+  .fade.bottom { bottom: 78px; background: linear-gradient(transparent, rgba(0,0,0,0.55)); }
+
+  /* recording indicator */
+  .recdot {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 50%;
+    transform: translateX(-50%);
+    z-index: 12; display: none; align-items: center; gap: 8px;
+    background: rgba(0,0,0,0.55); padding: 6px 14px; border-radius: 20px;
+    font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums;
+  }
+  .recdot.show { display: inline-flex; }
+  .recdot i {
+    width: 11px; height: 11px; border-radius: 50%; background: var(--rec);
+    animation: blink 1s steps(2, start) infinite;
+  }
+  @keyframes blink { 50% { opacity: 0.2; } }
+
+  /* status toast */
+  .status {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 14px); left: 50%;
+    transform: translateX(-50%); z-index: 11;
+    background: rgba(0,0,0,0.6); color: #fff;
+    padding: 6px 14px; border-radius: 20px;
+    font-size: 13px; font-weight: 600;
+    opacity: 0; transition: opacity 0.3s ease; pointer-events: none;
+  }
+  .status.show { opacity: 1; }
+
+  /* ---------- CONTROL BAR ---------- */
+  .controls {
+    position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
+    display: flex; align-items: center; justify-content: center;
+    gap: 10px; padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    background: var(--surface);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  .controls.faded { opacity: 0; transform: translateY(100%); pointer-events: none; }
+
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 11px 15px; border-radius: 11px;
+    font-size: 14px; font-weight: 700; font-family: inherit;
+    cursor: pointer; user-select: none;
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+  }
+  .btn:active { transform: scale(0.95); }
+  .btn.rec { background: var(--rec); border-color: var(--rec); min-width: 120px; justify-content: center; }
+  .btn.rec.on { background: #fff; color: var(--rec); border-color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); min-width: 104px; justify-content: center; }
+  .btn.icon { padding: 11px 13px; font-size: 17px; }
+
+  .group {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .group b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 34px; text-transform: none; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 96px; height: 6px; border-radius: 3px;
+    background: rgba(255,255,255,0.25); outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    border: 3px solid #fff; box-shadow: 0 1px 4px var(--shadow);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 3px solid #fff;
+  }
+
+  select {
+    padding: 9px 12px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 13px; font-family: inherit;
+    cursor: pointer; outline: none;
+  }
+  select option { background: #1a1a1f; color: #fff; }
+
+  /* tiny "edit script" toggle pinned top-left */
+  .editToggle {
+    position: fixed; top: calc(env(safe-area-inset-top, 0px) + 12px); left: 12px; z-index: 12;
+    background: rgba(0,0,0,0.55); border: 1px solid var(--border);
+    color: #fff; padding: 9px 13px; border-radius: 10px;
+    font-size: 13px; font-weight: 700; cursor: pointer;
+  }
+
+  /* startup overlay: tap to grant camera */
+  .gate {
+    position: fixed; inset: 0; z-index: 30;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; text-align: center; padding: 32px;
+    background: var(--bg);
+  }
+  .gate.hide { display: none; }
+  .gate h1 { font-size: 26px; }
+  .gate p { color: var(--text-dim); max-width: 340px; line-height: 1.5; font-size: 15px; }
+  .gate .btn.primary { font-size: 16px; padding: 15px 28px; }
+  .gate .err { color: var(--rec); font-weight: 700; max-width: 360px; }
+
+  @media (max-width: 520px) {
+    .scroll-content { font-size: 36px; }
+    .controls { gap: 7px; padding: 10px 8px calc(env(safe-area-inset-bottom, 0px) + 10px); }
+    input[type="range"] { width: 74px; }
+    .group { font-size: 10px; }
+  }
+</style>
+</head>
+<body>
+
+  <video id="cam" class="mirror" playsinline autoplay muted></video>
+  <div class="scrim" id="scrim"></div>
+
+  <div class="fade top"></div>
+  <div class="fade bottom"></div>
+  <div class="guide" id="guide"></div>
+
+  <div class="scroll-area" id="scrollArea">
+    <div class="scroll-content" id="content" contenteditable="true" spellcheck="false"
+         data-placeholder="Tap here to type or paste your script…"></div>
+  </div>
+
+  <div class="recdot" id="recdot"><i></i><span id="recTime">0:00</span></div>
+  <div class="status" id="status"></div>
+
+  <button class="editToggle" id="editToggle">✎ Script</button>
+
+  <div class="controls" id="controls">
+    <button class="btn rec" id="recBtn">● Record</button>
+    <button class="btn primary" id="playBtn">▶ Play</button>
+    <button class="btn icon" id="restartBtn" title="Restart">⟲</button>
+    <div class="group">Speed
+      <input type="range" id="speed" min="1" max="20" step="1" value="5" />
+      <b id="speedVal">5</b>
+    </div>
+    <div class="group">Size
+      <input type="range" id="size" min="24" max="140" step="2" value="44" />
+      <b id="sizeVal">44</b>
+    </div>
+    <div class="group">Font
+      <select id="font">
+        <option value="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">Sans</option>
+        <option value="Georgia, 'Times New Roman', serif">Serif</option>
+        <option value="'Courier New', monospace">Mono</option>
+        <option value="'Arial Black', Impact, sans-serif">Heavy</option>
+      </select>
+    </div>
+    <button class="btn icon" id="flipBtn" title="Switch camera">🔄</button>
+    <button class="btn icon" id="mirrorBtn" title="Mirror preview">🪞</button>
+    <button class="btn icon" id="dimBtn" title="Darken video">🌗</button>
+  </div>
+
+  <!-- startup gate -->
+  <div class="gate" id="gate">
+    <h1>🎬 Camera Teleprompter</h1>
+    <p>Film yourself while reading your script — both on this one screen. Tap below to allow the camera & mic.</p>
+    <button class="btn primary" id="startBtn">Start camera</button>
+    <p class="err" id="gateErr"></p>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const cam = $("cam"), scrollArea = $("scrollArea"), content = $("content");
+  const speedEl = $("speed"), speedVal = $("speedVal");
+  const sizeEl = $("size"), sizeVal = $("sizeVal");
+  const fontEl = $("font");
+  const controls = $("controls"), statusEl = $("status");
+  const playBtn = $("playBtn"), recBtn = $("recBtn");
+  const recdot = $("recdot"), recTime = $("recTime");
+  const gate = $("gate"), gateErr = $("gateErr");
+  const scrim = $("scrim"), guide = $("guide");
+
+  // ---------- persisted state ----------
+  const KEY = "camprompter.v1";
+  const state = Object.assign({
+    text: "", size: 44, speed: 5, font: fontEl.value,
+    mirror: true, dim: false, facing: "user",
+  }, load());
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function save() {
+    state.text = content.innerText;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // ---------- apply initial state ----------
+  content.textContent = state.text;
+  sizeEl.value = state.size;  sizeVal.textContent = state.size;
+  speedEl.value = state.speed; speedVal.textContent = state.speed;
+  fontEl.value = state.font;
+  applyStyle();
+  applyMirror();
+  applyDim();
+
+  function applyStyle() {
+    content.style.fontSize = state.size + "px";
+    content.style.fontFamily = state.font;
+  }
+  function applyMirror() { cam.classList.toggle("mirror", !!state.mirror); }
+  function applyDim() { scrim.classList.toggle("heavy", !!state.dim); }
+
+  // ---------- camera ----------
+  let mediaStream = null;
+
+  async function startCamera() {
+    gateErr.textContent = "";
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      gateErr.textContent = "This browser can't access the camera. Use Safari (iPhone) or Chrome (Android) over an https:// link.";
+      return;
+    }
+    try {
+      if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: state.facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: true,
+      });
+      cam.srcObject = mediaStream;
+      await cam.play().catch(() => {});
+      gate.classList.add("hide");
+      showControls();
+    } catch (err) {
+      let msg = "Couldn't start the camera.";
+      if (err && err.name === "NotAllowedError") msg = "Camera/mic permission was denied. Allow it in your browser settings and reload.";
+      else if (err && err.name === "NotFoundError") msg = "No camera found on this device.";
+      else if (location.protocol !== "https:" && location.hostname !== "localhost")
+        msg = "Camera needs a secure connection. Open this page via an https:// link (not a file).";
+      gateErr.textContent = msg + (err && err.message ? " (" + err.message + ")" : "");
+    }
+  }
+
+  $("startBtn").addEventListener("click", startCamera);
+
+  $("flipBtn").addEventListener("click", async () => {
+    state.facing = state.facing === "user" ? "environment" : "user";
+    // mirror only makes sense for the front (selfie) camera
+    state.mirror = state.facing === "user";
+    applyMirror(); save();
+    flashStatus(state.facing === "user" ? "Front camera" : "Rear camera");
+    await startCamera();
+  });
+
+  $("mirrorBtn").addEventListener("click", () => {
+    state.mirror = !state.mirror; applyMirror(); save();
+    flashStatus(state.mirror ? "Mirrored" : "Not mirrored");
+  });
+
+  $("dimBtn").addEventListener("click", () => {
+    state.dim = !state.dim; applyDim(); save();
+    flashStatus(state.dim ? "Video darkened" : "Video normal");
+  });
+
+  // ---------- recording (clean camera feed, no text overlay) ----------
+  let recorder = null, chunks = [], recStartT = 0, recTimer = null, recMime = "";
+
+  function pickMime() {
+    const cands = [
+      "video/mp4;codecs=h264,aac", "video/mp4",
+      "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm",
+    ];
+    for (const c of cands) {
+      if (window.MediaRecorder && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(c)) return c;
+    }
+    return "";
+  }
+
+  function toggleRecord() {
+    if (!mediaStream) { flashStatus("Start the camera first"); return; }
+    if (recorder && recorder.state === "recording") { stopRecord(); return; }
+    if (!window.MediaRecorder) { flashStatus("Recording not supported here"); return; }
+
+    chunks = [];
+    recMime = pickMime();
+    try {
+      recorder = recMime ? new MediaRecorder(mediaStream, { mimeType: recMime })
+                         : new MediaRecorder(mediaStream);
+    } catch (e) {
+      flashStatus("Can't record on this device"); return;
+    }
+    recMime = recorder.mimeType || recMime;
+    recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    recorder.onstop = saveRecording;
+    recorder.start();
+
+    recBtn.textContent = "■ Stop";
+    recBtn.classList.add("on");
+    recdot.classList.add("show");
+    recStartT = performance.now();
+    tickRecTime();
+    flashStatus("Recording");
+  }
+
+  function stopRecord() {
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    recBtn.textContent = "● Record";
+    recBtn.classList.remove("on");
+    recdot.classList.remove("show");
+    clearInterval(recTimer);
+  }
+
+  function tickRecTime() {
+    clearInterval(recTimer);
+    recTimer = setInterval(() => {
+      const s = Math.floor((performance.now() - recStartT) / 1000);
+      recTime.textContent = Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+    }, 250);
+  }
+
+  function saveRecording() {
+    if (!chunks.length) { flashStatus("Nothing recorded"); return; }
+    const ext = recMime.indexOf("mp4") !== -1 ? "mp4" : "webm";
+    const blob = new Blob(chunks, { type: recMime || "video/webm" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "take-" + stamp() + "." + ext;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
+    flashStatus("Saved " + a.download);
+  }
+
+  function stamp() {
+    const d = new Date();
+    const p = (n) => String(n).padStart(2, "0");
+    return d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + "-" + p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+
+  recBtn.addEventListener("click", toggleRecord);
+
+  // ---------- scrolling engine ----------
+  let pos = 0, playing = false, lastT = 0, raf = null;
+
+  function maxScroll() { return Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight); }
+
+  function tick(t) {
+    if (!playing) return;
+    if (!lastT) lastT = t;
+    const dt = (t - lastT) / 1000;
+    lastT = t;
+    pos += (state.speed * 18) * dt;
+    const max = maxScroll();
+    if (pos >= max) { pos = max; setPlaying(false); flashStatus("End"); }
+    scrollArea.scrollTop = pos;
+    raf = requestAnimationFrame(tick);
+  }
+
+  function setPlaying(on) {
+    playing = on;
+    lastT = 0;
+    playBtn.textContent = on ? "⏸ Pause" : "▶ Play";
+    guide.classList.toggle("show", on);
+    if (on) {
+      pos = scrollArea.scrollTop;
+      if (document.activeElement === content) content.blur();
+      raf = requestAnimationFrame(tick);
+      flashStatus("Playing");
+      autoFadeControls();
+    } else {
+      cancelAnimationFrame(raf);
+      flashStatus("Paused");
+      showControls();
+    }
+  }
+
+  function restart() {
+    pos = 0; scrollArea.scrollTop = 0;
+    setPlaying(false);
+    flashStatus("Restarted");
+  }
+
+  // ---------- status toast ----------
+  let statusTimer = null;
+  function flashStatus(msg) {
+    statusEl.textContent = msg;
+    statusEl.classList.add("show");
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => statusEl.classList.remove("show"), msg === "Playing" ? 700 : 1200);
+  }
+
+  // ---------- auto-fade controls while playing ----------
+  let fadeTimer = null;
+  function autoFadeControls() {
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(() => { if (playing) controls.classList.add("faded"); }, 2800);
+  }
+  function showControls() {
+    controls.classList.remove("faded");
+    if (playing) autoFadeControls();
+  }
+  document.addEventListener("mousemove", showControls);
+  scrollArea.addEventListener("touchstart", showControls, { passive: true });
+
+  // ---------- edit script toggle ----------
+  $("editToggle").addEventListener("click", () => {
+    if (playing) setPlaying(false);
+    content.focus();
+    // place caret at end
+    const r = document.createRange();
+    r.selectNodeContents(content); r.collapse(false);
+    const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
+    showControls();
+  });
+
+  // ---------- control handlers ----------
+  speedEl.addEventListener("input", () => {
+    state.speed = +speedEl.value; speedVal.textContent = state.speed; save();
+  });
+  sizeEl.addEventListener("input", () => {
+    state.size = +sizeEl.value; sizeVal.textContent = state.size;
+    applyStyle(); save();
+  });
+  fontEl.addEventListener("change", () => { state.font = fontEl.value; applyStyle(); save(); });
+
+  content.addEventListener("input", save);
+  content.addEventListener("focus", () => { if (playing) setPlaying(false); showControls(); });
+
+  playBtn.addEventListener("click", () => setPlaying(!playing));
+  $("restartBtn").addEventListener("click", restart);
+
+  // ---------- keyboard (handy if a Bluetooth remote / keyboard is paired) ----------
+  document.addEventListener("keydown", (e) => {
+    const editing = document.activeElement === content;
+    if (editing) { if (e.key === "Escape") { e.preventDefault(); content.blur(); } return; }
+    switch (e.key) {
+      case " ": case "PageDown": e.preventDefault(); setPlaying(!playing); break;
+      case "ArrowUp": e.preventDefault(); bumpSpeed(1); break;
+      case "ArrowDown": e.preventDefault(); bumpSpeed(-1); break;
+      case "ArrowRight": e.preventDefault(); jump(state.size * 3); break;
+      case "ArrowLeft": e.preventDefault(); jump(-state.size * 3); break;
+      case "r": case "R": e.preventDefault(); restart(); break;
+    }
+  });
+
+  function bumpSpeed(d) {
+    state.speed = Math.min(20, Math.max(1, state.speed + d));
+    speedEl.value = state.speed; speedVal.textContent = state.speed;
+    flashStatus("Speed " + state.speed); save();
+  }
+  function jump(px) {
+    pos = Math.min(maxScroll(), Math.max(0, scrollArea.scrollTop + px));
+    scrollArea.scrollTop = pos;
+  }
+
+  // manual scroll any time
+  scrollArea.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    pos = Math.min(maxScroll(), Math.max(0, scrollArea.scrollTop + e.deltaY));
+    scrollArea.scrollTop = pos;
+    showControls();
+  }, { passive: false });
+  scrollArea.addEventListener("scroll", () => { if (!playing) pos = scrollArea.scrollTop; });
+
+})();
+</script>
+</body>
+</html>

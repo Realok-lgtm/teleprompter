@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Teleprompter</title>
+<style>
+  :root {
+    --bg: #0d0d0f;
+    --surface: #1a1a1f;
+    --surface-2: #25252c;
+    --border: #34343d;
+    --text: #f2f2f5;
+    --text-dim: #9a9aa5;
+    --accent: #4f8cff;
+    --accent-text: #ffffff;
+    --shadow: rgba(0, 0, 0, 0.5);
+  }
+  [data-theme="light"] {
+    --bg: #f4f4f7;
+    --surface: #ffffff;
+    --surface-2: #ececf1;
+    --border: #d8d8e0;
+    --text: #16161a;
+    --text-dim: #6a6a76;
+    --accent: #2f6fef;
+    --accent-text: #ffffff;
+    --shadow: rgba(0, 0, 0, 0.12);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overflow: hidden;
+    transition: background 0.25s ease, color 0.25s ease;
+  }
+
+  /* ---------- FULL-SCREEN PROMPTER (the only screen) ---------- */
+  .prompter { position: fixed; inset: 0; background: var(--bg); }
+
+  .scroll-area { position: absolute; inset: 0; overflow: hidden; }
+
+  .scroll-content {
+    padding: 50vh 8vw;
+    font-size: 48px;
+    line-height: 1.5;
+    font-weight: 600;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    outline: none;
+    caret-color: var(--accent);
+    cursor: text;
+    min-height: 100%;
+  }
+  /* placeholder when empty */
+  .scroll-content:empty::before {
+    content: attr(data-placeholder);
+    color: var(--text-dim);
+  }
+
+  /* top & bottom fades — pointer-events:none so they don't block editing */
+  .fade { position: absolute; left: 0; right: 0; height: 16%; pointer-events: none; z-index: 2; }
+  .fade.top { top: 0; background: linear-gradient(var(--bg), transparent); }
+  .fade.bottom { bottom: 0; background: linear-gradient(transparent, var(--bg)); }
+
+  /* status toast */
+  .status {
+    position: absolute;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 11;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    pointer-events: none;
+  }
+  .status.show { opacity: 1; }
+
+  /* ---------- CONTROL BAR ---------- */
+  .controls {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 14px;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+  .controls.faded { opacity: 0; transform: translateY(100%); }
+
+  .btn {
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--text);
+    padding: 11px 16px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn:active { transform: scale(0.96); }
+  .btn.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); min-width: 116px; justify-content: center; }
+  .btn.icon { padding: 11px 13px; }
+
+  .group {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .group b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 38px; text-transform: none; }
+
+  input[type="range"] {
+    -webkit-appearance: none; appearance: none;
+    width: 110px; height: 6px; border-radius: 3px;
+    background: var(--surface-2); outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--accent); cursor: pointer;
+    border: 3px solid var(--surface); box-shadow: 0 1px 4px var(--shadow);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 18px; height: 18px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 3px solid var(--surface);
+  }
+
+  select {
+    padding: 9px 12px; border-radius: 9px;
+    border: 1px solid var(--border); background: var(--surface-2);
+    color: var(--text); font-size: 13px; font-family: inherit;
+    cursor: pointer; outline: none;
+  }
+
+  @media (max-width: 640px) {
+    .scroll-content { font-size: 36px; padding: 50vh 6vw; }
+    .controls { gap: 8px; padding: 10px; }
+    input[type="range"] { width: 80px; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="prompter" id="prompter">
+    <div class="fade top"></div>
+    <div class="fade bottom"></div>
+    <div class="status" id="status"></div>
+
+    <div class="scroll-area" id="scrollArea">
+      <div class="scroll-content" id="content" contenteditable="true" spellcheck="false"
+           data-placeholder="Click here and type or paste your script…"></div>
+    </div>
+
+    <div class="controls" id="controls">
+      <button class="btn primary" id="playBtn">▶ Play</button>
+      <button class="btn" id="restartBtn">⟲ Restart</button>
+      <div class="group">Speed
+        <input type="range" id="speed" min="1" max="20" step="1" value="5" />
+        <b id="speedVal">5</b>
+      </div>
+      <div class="group">Size
+        <input type="range" id="size" min="24" max="160" step="2" value="48" />
+        <b id="sizeVal">48px</b>
+      </div>
+      <div class="group">Font
+        <select id="font">
+          <option value="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">Sans</option>
+          <option value="Georgia, 'Times New Roman', serif">Serif</option>
+          <option value="'Courier New', monospace">Mono</option>
+          <option value="'Arial Black', Impact, sans-serif">Heavy</option>
+        </select>
+      </div>
+      <button class="btn icon" id="themeBtn" title="Toggle light / dark">🌙</button>
+      <button class="btn" id="fsBtn">⛶ Fullscreen</button>
+    </div>
+  </div>
+
+<script>
+(function () {
+  "use strict";
+
+  const $ = (id) => document.getElementById(id);
+  const prompter = $("prompter"), scrollArea = $("scrollArea"), content = $("content");
+  const speedEl = $("speed"), speedVal = $("speedVal");
+  const sizeEl = $("size"), sizeVal = $("sizeVal");
+  const fontEl = $("font");
+  const controls = $("controls"), statusEl = $("status");
+  const playBtn = $("playBtn");
+
+  // ---------- persisted state ----------
+  const KEY = "teleprompter.v1";
+  const state = Object.assign({
+    text: "", size: 48, speed: 5, font: fontEl.value, theme: "dark",
+  }, load());
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(KEY)) || {}; }
+    catch (e) { return {}; }
+  }
+  function save() {
+    state.text = content.innerText;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  // ---------- apply initial state ----------
+  content.textContent = state.text;
+  sizeEl.value = state.size;  sizeVal.textContent = state.size + "px";
+  speedEl.value = state.speed; speedVal.textContent = state.speed;
+  fontEl.value = state.font;
+  document.documentElement.setAttribute("data-theme", state.theme);
+  $("themeBtn").textContent = state.theme === "dark" ? "🌙" : "☀️";
+
+  function applyStyle() {
+    content.style.fontSize = state.size + "px";
+    content.style.fontFamily = state.font;
+  }
+
+  // ---------- control handlers ----------
+  $("themeBtn").addEventListener("click", () => {
+    state.theme = state.theme === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", state.theme);
+    $("themeBtn").textContent = state.theme === "dark" ? "🌙" : "☀️";
+    save();
+  });
+
+  speedEl.addEventListener("input", () => {
+    state.speed = +speedEl.value; speedVal.textContent = state.speed; save();
+  });
+  sizeEl.addEventListener("input", () => {
+    state.size = +sizeEl.value; sizeVal.textContent = state.size + "px";
+    applyStyle(); save();
+  });
+  fontEl.addEventListener("change", () => { state.font = fontEl.value; applyStyle(); save(); });
+
+  // save edits to the script as they happen
+  content.addEventListener("input", save);
+  // clicking into the text to edit pauses playback so you're not editing a moving target
+  content.addEventListener("focus", () => {
+    if (playing) setPlaying(false);
+    showControls();
+  });
+
+  // ---------- scrolling engine ----------
+  let pos = 0, playing = false, lastT = 0, raf = null;
+
+  function maxScroll() {
+    return Math.max(0, scrollArea.scrollHeight - scrollArea.clientHeight);
+  }
+
+  function tick(t) {
+    if (!playing) return;
+    if (!lastT) lastT = t;
+    const dt = (t - lastT) / 1000;
+    lastT = t;
+    pos += (state.speed * 18) * dt;   // speed 1-20 -> px/sec
+    const max = maxScroll();
+    if (pos >= max) { pos = max; setPlaying(false); flashStatus("End"); }
+    scrollArea.scrollTop = pos;
+    raf = requestAnimationFrame(tick);
+  }
+
+  function setPlaying(on) {
+    playing = on;
+    lastT = 0;
+    playBtn.textContent = on ? "⏸ Pause" : "▶ Play";
+    if (on) {
+      // start from the current scroll position (e.g. after manual scroll/edit)
+      pos = scrollArea.scrollTop;
+      if (document.activeElement === content) content.blur(); // stop editing while rolling
+      raf = requestAnimationFrame(tick);
+      flashStatus("Playing");
+      autoFadeControls();
+    } else {
+      cancelAnimationFrame(raf);
+      flashStatus("Paused");
+      showControls();
+    }
+  }
+
+  function restart() {
+    pos = 0; scrollArea.scrollTop = 0;
+    setPlaying(false);
+    flashStatus("Restarted");
+  }
+
+  // ---------- status toast ----------
+  let statusTimer = null;
+  function flashStatus(msg) {
+    statusEl.textContent = msg;
+    statusEl.classList.add("show");
+    clearTimeout(statusTimer);
+    statusTimer = setTimeout(() => statusEl.classList.remove("show"), msg === "Playing" ? 700 : 1100);
+  }
+
+  // ---------- auto-fade controls while playing ----------
+  let fadeTimer = null;
+  function autoFadeControls() {
+    clearTimeout(fadeTimer);
+    fadeTimer = setTimeout(() => { if (playing) controls.classList.add("faded"); }, 2500);
+  }
+  function showControls() {
+    controls.classList.remove("faded");
+    if (playing) autoFadeControls();
+  }
+  prompter.addEventListener("mousemove", showControls);
+  prompter.addEventListener("touchstart", showControls, { passive: true });
+
+  // ---------- buttons ----------
+  playBtn.addEventListener("click", () => setPlaying(!playing));
+  $("restartBtn").addEventListener("click", restart);
+  $("fsBtn").addEventListener("click", () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else prompter.requestFullscreen().catch(() => {});
+  });
+
+  // ---------- keyboard (disabled while editing text, so typing works) ----------
+  document.addEventListener("keydown", (e) => {
+    const editing = document.activeElement === content;
+    if (editing) {
+      // let all keys type normally; Escape leaves edit mode
+      if (e.key === "Escape") { e.preventDefault(); content.blur(); }
+      return;
+    }
+    switch (e.key) {
+      case " ": e.preventDefault(); setPlaying(!playing); break;
+      case "ArrowUp": e.preventDefault(); bumpSpeed(1); break;
+      case "ArrowDown": e.preventDefault(); bumpSpeed(-1); break;
+      case "ArrowRight": e.preventDefault(); jump(state.size * 3); break;
+      case "ArrowLeft": e.preventDefault(); jump(-state.size * 3); break;
+      case "+": case "=": e.preventDefault(); bumpSize(4); break;
+      case "-": case "_": e.preventDefault(); bumpSize(-4); break;
+      case "r": case "R": e.preventDefault(); restart(); break;
+      case "f": case "F": e.preventDefault(); $("fsBtn").click(); break;
+      case "Escape": e.preventDefault(); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); break;
+    }
+  });
+
+  function bumpSpeed(d) {
+    state.speed = Math.min(20, Math.max(1, state.speed + d));
+    speedEl.value = state.speed; speedVal.textContent = state.speed;
+    flashStatus("Speed " + state.speed); save();
+  }
+  function bumpSize(d) {
+    state.size = Math.min(160, Math.max(24, state.size + d));
+    sizeEl.value = state.size; sizeVal.textContent = state.size + "px";
+    applyStyle(); flashStatus("Size " + state.size + "px"); save();
+  }
+  function jump(px) {
+    pos = Math.min(maxScroll(), Math.max(0, scrollArea.scrollTop + px));
+    scrollArea.scrollTop = pos;
+  }
+
+  // ---------- manual scrolling: two-finger trackpad / mouse wheel ----------
+  // works any time, even mid-playback, so a small mistake doesn't need a restart
+  scrollArea.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    pos = Math.min(maxScroll(), Math.max(0, scrollArea.scrollTop + e.deltaY));
+    scrollArea.scrollTop = pos;
+    showControls();
+  }, { passive: false });
+
+  // keep pos in sync if the caret/selection scrolls the view while editing
+  scrollArea.addEventListener("scroll", () => { if (!playing) pos = scrollArea.scrollTop; });
+
+  applyStyle();
+})();
+</script>
+</body>
+</html>
