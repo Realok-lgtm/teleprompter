@@ -344,9 +344,15 @@
     }
     try {
       if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+      // 720p @ 30fps is what phone encoders can sustain for long takes.
+      // Full 1080p overruns the encoder — video freezes mid-take and the audio turns to static.
       mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: state.facing, width: { ideal: 1920 }, height: { ideal: 1080 } },
-        audio: true,
+        video: {
+          facingMode: state.facing,
+          width: { ideal: 1280 }, height: { ideal: 720 },
+          frameRate: { ideal: 30, max: 30 },
+        },
+        audio: { echoCancellation: true, noiseSuppression: true },
       });
       cam.srcObject = mediaStream;
       await cam.play().catch(() => {});
@@ -394,16 +400,21 @@
 
     chunks = [];
     recMime = pickMime();
+    // Cap bitrate to keep the encoder comfortable: ~5 Mbps video is plenty for 720p,
+    // 128 kbps AAC audio. Lets long takes stay smooth instead of stalling.
+    const opts = { videoBitsPerSecond: 5000000, audioBitsPerSecond: 128000 };
+    if (recMime) opts.mimeType = recMime;
     try {
-      recorder = recMime ? new MediaRecorder(mediaStream, { mimeType: recMime })
-                         : new MediaRecorder(mediaStream);
+      recorder = new MediaRecorder(mediaStream, opts);
     } catch (e) {
-      flashStatus("Can't record on this device"); return;
+      try { recorder = new MediaRecorder(mediaStream); }
+      catch (e2) { flashStatus("Can't record on this device"); return; }
     }
     recMime = recorder.mimeType || recMime;
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
     recorder.onstop = saveRecording;
-    recorder.start();
+    // timeslice: flush data every second so the file stays valid even on long takes
+    recorder.start(1000);
 
     recBtn.textContent = "■ Stop";
     recBtn.classList.add("on");
