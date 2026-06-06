@@ -111,62 +111,77 @@
   .status.show { opacity: 1; }
 
   /* ---------- CONTROL BAR ---------- */
+  /* Stacked rows with big touch targets — easy to hit without looking. */
   .controls {
     position: fixed; bottom: 0; left: 0; right: 0; z-index: 10;
-    display: flex; align-items: center; justify-content: center;
-    gap: 10px; padding: 12px 12px calc(env(safe-area-inset-bottom, 0px) + 12px);
+    display: flex; flex-direction: column;
+    gap: 12px; padding: 14px 14px calc(env(safe-area-inset-bottom, 0px) + 14px);
     background: var(--surface);
     -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
     border-top: 1px solid var(--border);
-    flex-wrap: wrap;
     transition: opacity 0.3s ease, transform 0.3s ease;
   }
   .controls.faded { opacity: 0; transform: translateY(100%); pointer-events: none; }
+
+  .ctl-row { display: flex; align-items: center; gap: 12px; }
 
   .btn {
     border: 1px solid var(--border);
     background: var(--surface-2);
     color: var(--text);
-    padding: 11px 15px; border-radius: 11px;
-    font-size: 14px; font-weight: 700; font-family: inherit;
+    border-radius: 14px;
+    font-size: 17px; font-weight: 700; font-family: inherit;
     cursor: pointer; user-select: none;
     transition: transform 0.08s ease, background 0.15s ease, border-color 0.15s ease;
-    display: inline-flex; align-items: center; gap: 7px; white-space: nowrap;
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px; white-space: nowrap;
   }
-  .btn:active { transform: scale(0.95); }
-  .btn.rec { background: var(--rec); border-color: var(--rec); min-width: 120px; justify-content: center; }
-  .btn.rec.on { background: #fff; color: var(--rec); border-color: #fff; }
-  .btn.primary { background: var(--accent); border-color: var(--accent); min-width: 104px; justify-content: center; }
-  .btn.icon { padding: 11px 13px; font-size: 17px; }
+  .btn:active { transform: scale(0.96); }
 
-  .group {
-    display: flex; align-items: center; gap: 8px;
-    font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
-    color: var(--text-dim);
+  /* primary action row: two large buttons fill the width */
+  .btn.rec, .btn.primary { flex: 1; height: 62px; font-size: 19px; }
+  .btn.rec { background: var(--rec); border-color: var(--rec); }
+  .btn.rec.on { background: #fff; color: var(--rec); border-color: #fff; }
+  .btn.primary { background: var(--accent); border-color: var(--accent); }
+
+  /* secondary row: equal-width tap targets */
+  .btn.icon { flex: 1; height: 54px; font-size: 24px; }
+
+  /* slider rows */
+  .slider-row label {
+    width: 58px; font-size: 13px; font-weight: 800; letter-spacing: 0.04em;
+    text-transform: uppercase; color: var(--text-dim);
   }
-  .group b { color: var(--text); font-variant-numeric: tabular-nums; min-width: 34px; text-transform: none; }
+  .slider-row b {
+    min-width: 40px; text-align: right; color: var(--text);
+    font-size: 18px; font-weight: 800; font-variant-numeric: tabular-nums;
+  }
 
   input[type="range"] {
     -webkit-appearance: none; appearance: none;
-    width: 96px; height: 6px; border-radius: 3px;
-    background: rgba(255,255,255,0.25); outline: none; cursor: pointer;
+    flex: 1; height: 36px; background: transparent; outline: none; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 8px; border-radius: 4px; background: rgba(255,255,255,0.25);
   }
   input[type="range"]::-webkit-slider-thumb {
-    -webkit-appearance: none; appearance: none;
-    width: 22px; height: 22px; border-radius: 50%;
+    -webkit-appearance: none; appearance: none; margin-top: -12px;
+    width: 32px; height: 32px; border-radius: 50%;
     background: var(--accent); cursor: pointer;
-    border: 3px solid #fff; box-shadow: 0 1px 4px var(--shadow);
+    border: 4px solid #fff; box-shadow: 0 1px 5px var(--shadow);
+  }
+  input[type="range"]::-moz-range-track {
+    height: 8px; border-radius: 4px; background: rgba(255,255,255,0.25);
   }
   input[type="range"]::-moz-range-thumb {
-    width: 22px; height: 22px; border-radius: 50%;
-    background: var(--accent); cursor: pointer; border: 3px solid #fff;
+    width: 32px; height: 32px; border-radius: 50%;
+    background: var(--accent); cursor: pointer; border: 4px solid #fff;
   }
 
   select {
-    padding: 9px 12px; border-radius: 9px;
+    flex: 1; height: 54px; padding: 0 14px; border-radius: 14px;
     border: 1px solid var(--border); background: var(--surface-2);
-    color: var(--text); font-size: 13px; font-family: inherit;
-    cursor: pointer; outline: none;
+    color: var(--text); font-size: 16px; font-weight: 700; font-family: inherit;
+    cursor: pointer; outline: none; text-align: center; text-align-last: center;
   }
   select option { background: #1a1a1f; color: #fff; }
 
@@ -213,9 +228,6 @@
 
   @media (max-width: 520px) {
     .scroll-content { font-size: 36px; }
-    .controls { gap: 7px; padding: 10px 8px calc(env(safe-area-inset-bottom, 0px) + 10px); }
-    input[type="range"] { width: 74px; }
-    .group { font-size: 10px; }
   }
 </style>
 </head>
@@ -249,29 +261,31 @@
   <button class="editToggle" id="editToggle">✎ Script</button>
 
   <div class="controls" id="controls">
-    <button class="btn rec" id="recBtn">● Record</button>
-    <button class="btn primary" id="playBtn">▶ Play</button>
-    <button class="btn icon" id="restartBtn" title="Restart">⟲</button>
-    <button class="btn icon" id="clearBtn" title="Clear script">🗑</button>
-    <div class="group">Speed
+    <div class="ctl-row">
+      <button class="btn rec" id="recBtn">● Record</button>
+      <button class="btn primary" id="playBtn">▶ Play</button>
+    </div>
+    <div class="ctl-row slider-row">
+      <label for="speed">Speed</label>
       <input type="range" id="speed" min="1" max="20" step="1" value="5" />
       <b id="speedVal">5</b>
     </div>
-    <div class="group">Size
+    <div class="ctl-row slider-row">
+      <label for="size">Size</label>
       <input type="range" id="size" min="24" max="140" step="2" value="44" />
       <b id="sizeVal">44</b>
     </div>
-    <div class="group">Font
-      <select id="font">
+    <div class="ctl-row">
+      <select id="font" title="Font">
         <option value="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">Sans</option>
         <option value="Georgia, 'Times New Roman', serif">Serif</option>
         <option value="'Courier New', monospace">Mono</option>
         <option value="'Arial Black', Impact, sans-serif">Heavy</option>
       </select>
+      <button class="btn icon" id="flipBtn" title="Switch camera">🔄</button>
+      <button class="btn icon" id="mirrorBtn" title="Mirror preview">🪞</button>
+      <button class="btn icon" id="clearBtn" title="Clear script">🗑</button>
     </div>
-    <button class="btn icon" id="flipBtn" title="Switch camera">🔄</button>
-    <button class="btn icon" id="mirrorBtn" title="Mirror preview">🪞</button>
-    <button class="btn icon" id="dimBtn" title="Darken video">🌗</button>
   </div>
 
   <!-- startup gate -->
@@ -373,11 +387,6 @@
   $("mirrorBtn").addEventListener("click", () => {
     state.mirror = !state.mirror; applyMirror(); save();
     flashStatus(state.mirror ? "Mirrored" : "Not mirrored");
-  });
-
-  $("dimBtn").addEventListener("click", () => {
-    state.dim = !state.dim; applyDim(); save();
-    flashStatus(state.dim ? "Video darkened" : "Video normal");
   });
 
   // ---------- recording (clean camera feed, no text overlay) ----------
@@ -619,7 +628,6 @@
   });
 
   playBtn.addEventListener("click", () => setPlaying(!playing));
-  $("restartBtn").addEventListener("click", restart);
 
   // ---------- clear the saved script ----------
   $("clearBtn").addEventListener("click", () => {
