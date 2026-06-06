@@ -382,6 +382,41 @@
   // ---------- recording (clean camera feed, no text overlay) ----------
   let recorder = null, chunks = [], recStartT = 0, recTimer = null, recMime = "";
 
+  // Constant-frame-rate pipeline: draw the camera onto a canvas and capture it at a
+  // locked 30fps. Browser MediaRecorder otherwise produces VARIABLE frame rate, which
+  // plays fine in Photos but stutters in editors like TikTok. Falls back gracefully.
+  const FPS = 30;
+  let recCanvas = null, recCtx = null, drawRAF = null, canvasStream = null;
+
+  function buildRecordStream() {
+    try {
+      const vw = cam.videoWidth, vh = cam.videoHeight;
+      const c = document.createElement("canvas");
+      if (!vw || !vh || typeof c.captureStream !== "function") return mediaStream; // unsupported → raw
+      recCanvas = c; recCanvas.width = vw; recCanvas.height = vh;
+      recCtx = recCanvas.getContext("2d");
+      const draw = () => {
+        if (!recCanvas) return;
+        recCtx.drawImage(cam, 0, 0, vw, vh); // un-mirrored = true orientation in the saved file
+        drawRAF = requestAnimationFrame(draw);
+      };
+      draw();
+      canvasStream = recCanvas.captureStream(FPS);
+      mediaStream.getAudioTracks().forEach((t) => canvasStream.addTrack(t));
+      return canvasStream;
+    } catch (e) {
+      stopCanvasPipeline();
+      return mediaStream;
+    }
+  }
+
+  function stopCanvasPipeline() {
+    if (drawRAF) cancelAnimationFrame(drawRAF);
+    drawRAF = null;
+    if (canvasStream) canvasStream.getVideoTracks().forEach((t) => t.stop());
+    canvasStream = null; recCanvas = null; recCtx = null;
+  }
+
   // ---------- keep the screen awake while recording or scrolling ----------
   // Without this the phone auto-locks mid-take and ruins a long recording.
   let wakeLock = null;
@@ -426,17 +461,24 @@
     // 128 kbps AAC audio. Lets long takes stay smooth instead of stalling.
     const opts = { videoBitsPerSecond: 5000000, audioBitsPerSecond: 128000 };
     if (recMime) opts.mimeType = recMime;
+
+    let stream = buildRecordStream();   // constant-fps canvas stream (or raw camera fallback)
     try {
-      recorder = new MediaRecorder(mediaStream, opts);
+      recorder = new MediaRecorder(stream, opts);
     } catch (e) {
-      try { recorder = new MediaRecorder(mediaStream); }
-      catch (e2) { flashStatus("Can't record on this device"); return; }
+      // canvas stream rejected → fall back to recording the camera directly
+      stopCanvasPipeline();
+      stream = mediaStream;
+      try { recorder = new MediaRecorder(stream, opts); }
+      catch (e2) {
+        try { recorder = new MediaRecorder(stream); }
+        catch (e3) { flashStatus("Can't record on this device"); return; }
+      }
     }
     recMime = recorder.mimeType || recMime;
     recorder.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
-    recorder.onstop = saveRecording;
-    // timeslice: flush data every second so the file stays valid even on long takes
-    recorder.start(1000);
+    recorder.onstop = () => { stopCanvasPipeline(); saveRecording(); };
+    recorder.start();   // finalize as one clean file at stop (most editor-compatible)
 
     recBtn.textContent = "■ Stop";
     recBtn.classList.add("on");
