@@ -80,22 +80,6 @@
     font-weight: 600;
   }
 
-  /* reading guide line at the eye-line near top-third */
-  .guide {
-    position: fixed; left: 0; right: 0; top: 38%;
-    height: 0; z-index: 2; pointer-events: none;
-    border-top: 2px solid rgba(79,140,255,0.55);
-    opacity: 0;
-    transition: opacity 0.25s ease;
-  }
-  .guide.show { opacity: 1; }
-  .guide::before, .guide::after {
-    content: ""; position: absolute; top: -6px;
-    border: 6px solid transparent;
-  }
-  .guide::before { left: 8px; border-left-color: rgba(79,140,255,0.7); }
-  .guide::after  { right: 8px; border-right-color: rgba(79,140,255,0.7); }
-
   .fade { position: fixed; left: 0; right: 0; height: 14%; pointer-events: none; z-index: 2; }
   .fade.top { top: 0; background: linear-gradient(rgba(0,0,0,0.55), transparent); }
   .fade.bottom { bottom: 78px; background: linear-gradient(transparent, rgba(0,0,0,0.55)); }
@@ -194,6 +178,26 @@
     font-size: 13px; font-weight: 700; cursor: pointer;
   }
 
+  /* after-recording save card */
+  .savecard {
+    position: fixed; inset: 0; z-index: 25;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 16px; padding: 28px;
+    background: rgba(0,0,0,0.92);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+    text-align: center;
+  }
+  .savecard.hide { display: none; }
+  .savecard h2 { font-size: 22px; }
+  .savecard video {
+    max-width: min(90vw, 420px); max-height: 52vh;
+    border-radius: 14px; background: #000;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+  }
+  .savecard .savehint { color: var(--text-dim); max-width: 340px; line-height: 1.5; font-size: 14px; }
+  .savecard-row { display: flex; gap: 12px; }
+  .savecard .btn.primary { font-size: 16px; padding: 14px 24px; }
+
   /* startup overlay: tap to grant camera */
   .gate {
     position: fixed; inset: 0; z-index: 30;
@@ -222,15 +226,25 @@
 
   <div class="fade top"></div>
   <div class="fade bottom"></div>
-  <div class="guide" id="guide"></div>
 
   <div class="scroll-area" id="scrollArea">
-    <div class="scroll-content" id="content" contenteditable="true" spellcheck="false"
-         data-placeholder="Tap here to type or paste your script…"></div>
+    <div class="scroll-content" id="content" contenteditable="false" spellcheck="false"
+         data-placeholder="Tap ✎ Script (top-left) to add your text. Then drag with your finger to scroll."></div>
   </div>
 
   <div class="recdot" id="recdot"><i></i><span id="recTime">0:00</span></div>
   <div class="status" id="status"></div>
+
+  <!-- after-recording: save to camera roll -->
+  <div class="savecard hide" id="saveCard">
+    <h2>Take recorded ✓</h2>
+    <video id="preview" playsinline controls></video>
+    <p class="savehint" id="saveHint"></p>
+    <div class="savecard-row">
+      <button class="btn" id="discardBtn">🗑 Discard</button>
+      <button class="btn primary" id="saveBtn">⬇ Save to Photos</button>
+    </div>
+  </div>
 
   <button class="editToggle" id="editToggle">✎ Script</button>
 
@@ -280,7 +294,8 @@
   const playBtn = $("playBtn"), recBtn = $("recBtn");
   const recdot = $("recdot"), recTime = $("recTime");
   const gate = $("gate"), gateErr = $("gateErr");
-  const scrim = $("scrim"), guide = $("guide");
+  const scrim = $("scrim");
+  const saveCard = $("saveCard"), preview = $("preview"), saveHint = $("saveHint");
 
   // ---------- persisted state ----------
   const KEY = "camprompter.v1";
@@ -420,19 +435,63 @@
     }, 250);
   }
 
+  let lastFile = null, lastUrl = null;
+
   function saveRecording() {
     if (!chunks.length) { flashStatus("Nothing recorded"); return; }
     const ext = recMime.indexOf("mp4") !== -1 ? "mp4" : "webm";
-    const blob = new Blob(chunks, { type: recMime || "video/webm" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "take-" + stamp() + "." + ext;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1500);
-    flashStatus("Saved " + a.download);
+    const type = recMime || "video/webm";
+    const blob = new Blob(chunks, { type });
+    const name = "take-" + stamp() + "." + ext;
+
+    if (lastUrl) URL.revokeObjectURL(lastUrl);
+    lastUrl = URL.createObjectURL(blob);
+    lastFile = new File([blob], name, { type });
+
+    // show preview + Save sheet
+    preview.src = lastUrl;
+    const canShareFile = !!(navigator.canShare && navigator.canShare({ files: [lastFile] }));
+    saveHint.textContent = canShareFile
+      ? "Tap Save, then choose “Save Video” in the sheet to add it to your camera roll."
+      : "Tap Save to download the video to this device.";
+    saveCard.classList.remove("hide");
   }
+
+  async function doSave() {
+    if (!lastFile) return;
+    // Preferred on phones: share sheet → "Save Video" lands in the camera roll / Photos.
+    if (navigator.canShare && navigator.canShare({ files: [lastFile] })) {
+      try {
+        await navigator.share({ files: [lastFile], title: "Teleprompter take" });
+        flashStatus("Saved");
+        closeSaveCard();
+        return;
+      } catch (err) {
+        if (err && err.name === "AbortError") return; // user backed out of the sheet
+        // fall through to download
+      }
+    }
+    // Fallback (desktop / unsupported): plain download.
+    const a = document.createElement("a");
+    a.href = lastUrl; a.download = lastFile.name;
+    document.body.appendChild(a); a.click();
+    setTimeout(() => a.remove(), 500);
+    flashStatus("Saved to device");
+    closeSaveCard();
+  }
+
+  function closeSaveCard() {
+    saveCard.classList.add("hide");
+    preview.pause(); preview.removeAttribute("src"); preview.load();
+  }
+
+  $("saveBtn").addEventListener("click", doSave);
+  $("discardBtn").addEventListener("click", () => {
+    if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+    lastFile = null;
+    closeSaveCard();
+    flashStatus("Discarded");
+  });
 
   function stamp() {
     const d = new Date();
@@ -463,7 +522,6 @@
     playing = on;
     lastT = 0;
     playBtn.textContent = on ? "⏸ Pause" : "▶ Play";
-    guide.classList.toggle("show", on);
     if (on) {
       pos = scrollArea.scrollTop;
       if (document.activeElement === content) content.blur();
@@ -503,17 +561,41 @@
     if (playing) autoFadeControls();
   }
   document.addEventListener("mousemove", showControls);
-  scrollArea.addEventListener("touchstart", showControls, { passive: true });
+
+  // ---------- finger drag to scroll (works even mid-take, without pausing) ----------
+  let dragY = null, dragFrom = 0;
+  scrollArea.addEventListener("touchstart", (e) => {
+    showControls();
+    if (content.isContentEditable) return;       // let native handle text editing/selection
+    dragY = e.touches[0].clientY;
+    dragFrom = scrollArea.scrollTop;
+  }, { passive: true });
+
+  scrollArea.addEventListener("touchmove", (e) => {
+    if (dragY === null) return;
+    const dy = e.touches[0].clientY - dragY;
+    const np = Math.min(maxScroll(), Math.max(0, dragFrom - dy));
+    scrollArea.scrollTop = np;
+    pos = np;                                     // keep the auto-scroll in sync if playing
+    e.preventDefault();                           // stop the page from rubber-banding
+  }, { passive: false });
+
+  scrollArea.addEventListener("touchend", () => { dragY = null; }, { passive: true });
+  scrollArea.addEventListener("touchcancel", () => { dragY = null; }, { passive: true });
 
   // ---------- edit script toggle ----------
   $("editToggle").addEventListener("click", () => {
+    if (content.isContentEditable) { content.blur(); return; }
     if (playing) setPlaying(false);
+    content.contentEditable = "true";
     content.focus();
     // place caret at end
     const r = document.createRange();
     r.selectNodeContents(content); r.collapse(false);
     const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(r);
     showControls();
+    flashStatus("Editing — tap ✓ Done when finished");
+    $("editToggle").textContent = "✓ Done";
   });
 
   // ---------- control handlers ----------
@@ -528,6 +610,11 @@
 
   content.addEventListener("input", save);
   content.addEventListener("focus", () => { if (playing) setPlaying(false); showControls(); });
+  content.addEventListener("blur", () => {
+    content.contentEditable = "false";
+    $("editToggle").textContent = "✎ Script";
+    save();
+  });
 
   playBtn.addEventListener("click", () => setPlaying(!playing));
   $("restartBtn").addEventListener("click", restart);
