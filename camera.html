@@ -214,6 +214,28 @@
   .savecard-row { display: flex; gap: 12px; }
   .savecard .btn.primary { font-size: 16px; padding: 14px 24px; }
 
+  /* "saved — safe to close" confirmation */
+  .donecard {
+    position: fixed; inset: 0; z-index: 26;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 18px; padding: 32px; text-align: center;
+    background: rgba(6, 20, 10, 0.96);
+    -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  }
+  .donecard.hide { display: none; }
+  .donecard .bigcheck {
+    width: 108px; height: 108px; border-radius: 50%;
+    background: #1faa55; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 64px; font-weight: 900; line-height: 1;
+    box-shadow: 0 10px 40px rgba(31,170,85,0.5);
+    animation: pop 0.35s ease;
+  }
+  @keyframes pop { 0% { transform: scale(0.4); opacity: 0; } 70% { transform: scale(1.08); } 100% { transform: scale(1); opacity: 1; } }
+  .donecard h2 { font-size: 24px; }
+  .donecard p { color: var(--text-dim); max-width: 340px; line-height: 1.5; font-size: 15px; }
+  .donecard .btn.primary { font-size: 17px; padding: 15px 28px; margin-top: 6px; }
+
   /* startup overlay: tap to grant camera */
   .gate {
     position: fixed; inset: 0; z-index: 30;
@@ -257,6 +279,14 @@
       <button class="btn" id="discardBtn">🗑 Discard</button>
       <button class="btn primary" id="saveBtn">⬇ Save to Photos</button>
     </div>
+  </div>
+
+  <!-- confirmation: video is fully saved, safe to leave -->
+  <div class="donecard hide" id="doneCard">
+    <div class="bigcheck">✓</div>
+    <h2 id="doneTitle">Saved to your camera roll</h2>
+    <p id="doneMsg">Your video is safely saved. You can close this and open TikTok.</p>
+    <button class="btn primary" id="doneBtn">⟲ Record another</button>
   </div>
 
   <button class="editToggle" id="editToggle">✎ Script</button>
@@ -534,8 +564,7 @@
     if (navigator.canShare && navigator.canShare({ files: [lastFile] })) {
       try {
         await navigator.share({ files: [lastFile], title: "Teleprompter take" });
-        flashStatus("Saved");
-        closeSaveCard();
+        showDone(true);
         return;
       } catch (err) {
         if (err && err.name === "AbortError") return; // user backed out of the sheet
@@ -547,14 +576,27 @@
     a.href = lastUrl; a.download = lastFile.name;
     document.body.appendChild(a); a.click();
     setTimeout(() => a.remove(), 500);
-    flashStatus("Saved to device");
+    showDone(false);
+  }
+
+  function showDone(toCameraRoll) {
     closeSaveCard();
+    $("doneTitle").textContent = toCameraRoll ? "Saved ✓" : "Saved to this device ✓";
+    $("doneMsg").textContent = toCameraRoll
+      ? "Your video is safely saved. You can close this and open TikTok."
+      : "Your video downloaded to this device. Safe to close.";
+    $("doneCard").classList.remove("hide");
+    // release the in-memory copy now that it's saved
+    if (lastUrl) { URL.revokeObjectURL(lastUrl); lastUrl = null; }
+    lastFile = null;
   }
 
   function closeSaveCard() {
     saveCard.classList.add("hide");
     preview.pause(); preview.removeAttribute("src"); preview.load();
   }
+
+  $("doneBtn").addEventListener("click", () => $("doneCard").classList.add("hide"));
 
   $("saveBtn").addEventListener("click", doSave);
   $("discardBtn").addEventListener("click", () => {
