@@ -4,6 +4,15 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Camera Teleprompter</title>
+
+<!-- PWA / install-to-home-screen -->
+<link rel="manifest" href="manifest.webmanifest" />
+<meta name="theme-color" content="#0d0d0f" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Teleprompter" />
 <style>
   :root {
     --bg: #0d0d0f;
@@ -555,6 +564,13 @@
     showControls();
   }, { passive: false });
   scrollArea.addEventListener("scroll", () => { if (!playing) pos = scrollArea.scrollTop; });
+
+  // ---------- offline / installable app ----------
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js").catch(() => {});
+    });
+  }
 
 })();
 </script>
