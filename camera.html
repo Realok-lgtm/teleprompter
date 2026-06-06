@@ -382,6 +382,28 @@
   // ---------- recording (clean camera feed, no text overlay) ----------
   let recorder = null, chunks = [], recStartT = 0, recTimer = null, recMime = "";
 
+  // ---------- keep the screen awake while recording or scrolling ----------
+  // Without this the phone auto-locks mid-take and ruins a long recording.
+  let wakeLock = null;
+  function isRolling() { return (recorder && recorder.state === "recording") || playing; }
+  async function updateWakeLock() {
+    try {
+      if (!("wakeLock" in navigator)) return;
+      if (isRolling()) {
+        if (!wakeLock) {
+          wakeLock = await navigator.wakeLock.request("screen");
+          wakeLock.addEventListener("release", () => { wakeLock = null; });
+        }
+      } else if (wakeLock) {
+        const w = wakeLock; wakeLock = null; await w.release();
+      }
+    } catch (e) {}
+  }
+  // wake locks drop when the page is backgrounded — re-acquire on return
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "visible") updateWakeLock();
+  });
+
   function pickMime() {
     const cands = [
       "video/mp4;codecs=h264,aac", "video/mp4",
@@ -422,6 +444,7 @@
     recStartT = performance.now();
     tickRecTime();
     flashStatus("Recording");
+    updateWakeLock();
   }
 
   function stopRecord() {
@@ -430,6 +453,7 @@
     recBtn.classList.remove("on");
     recdot.classList.remove("show");
     clearInterval(recTimer);
+    updateWakeLock();
   }
 
   function tickRecTime() {
@@ -538,6 +562,7 @@
       flashStatus("Paused");
       showControls();
     }
+    updateWakeLock();
   }
 
   function restart() {
