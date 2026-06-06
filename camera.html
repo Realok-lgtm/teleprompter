@@ -252,6 +252,7 @@
     <button class="btn rec" id="recBtn">● Record</button>
     <button class="btn primary" id="playBtn">▶ Play</button>
     <button class="btn icon" id="restartBtn" title="Restart">⟲</button>
+    <button class="btn icon" id="clearBtn" title="Clear script">🗑</button>
     <div class="group">Speed
       <input type="range" id="speed" min="1" max="20" step="1" value="5" />
       <b id="speedVal">5</b>
@@ -619,6 +620,17 @@
 
   playBtn.addEventListener("click", () => setPlaying(!playing));
   $("restartBtn").addEventListener("click", restart);
+
+  // ---------- clear the saved script ----------
+  $("clearBtn").addEventListener("click", () => {
+    if (!content.innerText.trim()) { content.focus(); return; }
+    if (!confirm("Clear the script? This can't be undone.")) return;
+    if (playing) setPlaying(false);
+    content.textContent = "";
+    pos = 0; scrollArea.scrollTop = 0;
+    save();
+    flashStatus("Script cleared");
+  });
 
   // ---------- keyboard (handy if a Bluetooth remote / keyboard is paired) ----------
   document.addEventListener("keydown", (e) => {
