@@ -10,11 +10,14 @@ struct ContentView: View {
     @AppStorage("fontChoice") private var fontChoice = "sans"
 
     @State private var showEditor = false
+    @State private var editingInline = false
     @State private var dragging = false
     @State private var dragStart: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
+    @FocusState private var editorFocused: Bool
+    @FocusState private var inlineFocused: Bool
 
-    private let placeholder = "Tap the pencil to add your script.\n\nThen press Play to scroll, and Record to film.\n\nDrag up or down any time to reposition."
+    private let placeholder = "Tap anywhere to add your script"
 
     var body: some View {
         ZStack {
@@ -49,30 +52,89 @@ struct ContentView: View {
 
     private var prompter: some View {
         GeometryReader { geo in
-            let topPad = geo.size.height * 0.5
-            Text(script.isEmpty ? placeholder : script)
-                .font(promptFont)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.center)
-                .shadow(color: .black.opacity(0.85), radius: 6, y: 2)
-                .frame(maxWidth: .infinity)
-                .padding(.horizontal, 22)
-                .background(
-                    GeometryReader { g in
-                        Color.clear.preference(key: HeightKey.self, value: g.size.height)
-                    }
-                )
-                .padding(.top, topPad)
-                .offset(y: -scroller.offset)
-                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
-                .clipped()
-                .contentShape(Rectangle())
-                .gesture(dragGesture)
-                .onPreferenceChange(HeightKey.self) { h in
-                    contentHeight = h
-                    scroller.maxOffset = max(0, h)
+            ZStack {
+                if editingInline {
+                    // Inline editing: cursor + keyboard directly on the camera view.
+                    TextEditor(text: $script)
+                        .font(promptFont)
+                        .foregroundStyle(.white)
+                        .tint(.white)
+                        .multilineTextAlignment(.center)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        .padding(.horizontal, 18)
+                        .padding(.top, geo.size.height * 0.06)
+                        .focused($inlineFocused)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                        .toolbar {
+                            ToolbarItemGroup(placement: .keyboard) {
+                                Spacer()
+                                Button("Done") { stopInlineEditing() }
+                            }
+                        }
+                } else if script.isEmpty {
+                    // Short hint, centered in the reading area above the controls.
+                    Text(placeholder)
+                        .font(promptFont)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .shadow(color: .black.opacity(0.85), radius: 6, y: 2)
+                        .padding(.horizontal, 22)
+                        .frame(width: geo.size.width, height: geo.size.height * 0.66, alignment: .center)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                        .contentShape(Rectangle())
+                        .onTapGesture { startInlineEditing() }
+                } else {
+                    let topPad = geo.size.height * 0.5
+                    Text(script)
+                        .font(promptFont)
+                        .foregroundStyle(.white)
+                        .multilineTextAlignment(.center)
+                        .shadow(color: .black.opacity(0.85), radius: 6, y: 2)
+                        .frame(maxWidth: .infinity)
+                        .padding(.horizontal, 22)
+                        .padding(.top, topPad)
+                        .offset(y: -scroller.offset)
+                        .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
+                        .clipped()
+                        .contentShape(Rectangle())
+                        .onTapGesture { startInlineEditing() }
+                        .gesture(dragGesture)
                 }
+
+                // Always-present, invisible height measurer. Keeps the scroll
+                // range (maxOffset) correct no matter which branch is showing,
+                // so Play always knows how far to scroll.
+                Text(script.isEmpty ? " " : script)
+                    .font(promptFont)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, 22)
+                    .background(
+                        GeometryReader { g in
+                            Color.clear.preference(key: HeightKey.self, value: g.size.height)
+                        }
+                    )
+                    .opacity(0)
+                    .allowsHitTesting(false)
+            }
+            .onPreferenceChange(HeightKey.self) { h in
+                contentHeight = h
+                scroller.maxOffset = max(0, h)
+            }
         }
+    }
+
+    private func startInlineEditing() {
+        scroller.pause()
+        editingInline = true
+        // Focus once the editor is in the hierarchy so the keyboard opens.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { inlineFocused = true }
+    }
+
+    private func stopInlineEditing() {
+        inlineFocused = false
+        editingInline = false
     }
 
     private var dragGesture: some Gesture {
@@ -213,16 +275,28 @@ struct ContentView: View {
 
     private var editor: some View {
         NavigationStack {
-            TextEditor(text: $script)
-                .font(.title3)
-                .padding(8)
-                .navigationTitle("Script")
-                .navigationBarTitleDisplayMode(.inline)
-                .toolbar {
-                    ToolbarItem(placement: .confirmationAction) {
-                        Button("Done") { showEditor = false }
-                    }
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: $script)
+                    .font(.title3)
+                    .padding(8)
+                    .focused($editorFocused)
+                if script.isEmpty {
+                    Text("Type or paste your script here…")
+                        .font(.title3)
+                        .foregroundStyle(.secondary)
+                        .padding(.horizontal, 13)
+                        .padding(.vertical, 16)
+                        .allowsHitTesting(false)
                 }
+            }
+            .navigationTitle("Script")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") { showEditor = false }
+                }
+            }
+            .onAppear { editorFocused = true }
         }
     }
 

@@ -113,6 +113,16 @@ final class CameraModel: NSObject, ObservableObject {
                 }
                 connection.automaticallyAdjustsVideoMirroring = false
                 connection.isVideoMirrored = (self.position == .front)
+
+                // Force H.264 (not the iPhone's default HEVC). HEVC uploads
+                // unreliably to Instagram and is only tolerated by TikTok;
+                // H.264 + AAC in a .mov is the format both accept cleanly.
+                if self.movieOutput.availableVideoCodecTypes.contains(.h264) {
+                    self.movieOutput.setOutputSettings(
+                        [AVVideoCodecKey: AVVideoCodecType.h264],
+                        for: connection
+                    )
+                }
             }
             let url = FileManager.default.temporaryDirectory
                 .appendingPathComponent("take-\(Int(Date().timeIntervalSince1970)).mov")

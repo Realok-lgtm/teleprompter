@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		156CC9884C035523C51F8633 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 964FC7E86E531B40AF6C6B25 /* Assets.xcassets */; };
 		2032119A8C2D38015E86D658 /* Scroller.swift in Sources */ = {isa = PBXBuildFile; fileRef = DD9526ECA1D7FC32AC5B78E3 /* Scroller.swift */; };
 		3F4E4233EBDDE97AC6C820FF /* CameraModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA7C2B53174D9F70812F8409 /* CameraModel.swift */; };
 		58CA15BAF7B3F2A705A49CDB /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BEDDC9335A19808758ED30 /* ContentView.swift */; };
@@ -19,6 +20,7 @@
 		302C2DA7B7C2945B6CA20321 /* Teleprompter.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = Teleprompter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		32BEDDC9335A19808758ED30 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
 		3EDEEFC0877941C0DEC7514C /* CameraPreview.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreview.swift; sourceTree = "<group>"; };
+		964FC7E86E531B40AF6C6B25 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DD9526ECA1D7FC32AC5B78E3 /* Scroller.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Scroller.swift; sourceTree = "<group>"; };
 		EA7C2B53174D9F70812F8409 /* CameraModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraModel.swift; sourceTree = "<group>"; };
 		FCB3B1ACCDFDA46331DDEEB9 /* TeleprompterApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeleprompterApp.swift; sourceTree = "<group>"; };
@@ -44,6 +46,7 @@
 		36CD99BFE3A939A2840086C8 /* Teleprompter */ = {
 			isa = PBXGroup;
 			children = (
+				964FC7E86E531B40AF6C6B25 /* Assets.xcassets */,
 				EA7C2B53174D9F70812F8409 /* CameraModel.swift */,
 				3EDEEFC0877941C0DEC7514C /* CameraPreview.swift */,
 				32BEDDC9335A19808758ED30 /* ContentView.swift */,
@@ -62,6 +65,7 @@
 			buildConfigurationList = CD431B6B1CEA4C61E210C9E1 /* Build configuration list for PBXNativeTarget "Teleprompter" */;
 			buildPhases = (
 				1B42BD89D2B5E9555F644890 /* Sources */,
+				A43C595B0BD2F0BBF816531F /* Resources */,
 			);
 			buildRules = (
 			);
@@ -84,7 +88,7 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					725F04B3CB317C61DC8B74DA = {
-						DevelopmentTeam = 9HTXJ3542C;
+						DevelopmentTeam = P46UVVQDQ7;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -107,6 +111,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		A43C595B0BD2F0BBF816531F /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				156CC9884C035523C51F8633 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		1B42BD89D2B5E9555F644890 /* Sources */ = {
@@ -180,7 +195,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
-				DEVELOPMENT_TEAM = 9HTXJ3542C;
+				DEVELOPMENT_TEAM = P46UVVQDQ7;
 				ENABLE_NS_ASSERTIONS = NO;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
@@ -260,7 +275,7 @@
 				COPY_PHASE_STRIP = NO;
 				CURRENT_PROJECT_VERSION = 1;
 				DEBUG_INFORMATION_FORMAT = dwarf;
-				DEVELOPMENT_TEAM = 9HTXJ3542C;
+				DEVELOPMENT_TEAM = P46UVVQDQ7;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
 				ENABLE_TESTABILITY = YES;
 				GCC_C_LANGUAGE_STANDARD = gnu11;
