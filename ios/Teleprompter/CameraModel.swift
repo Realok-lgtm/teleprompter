@@ -4,10 +4,12 @@ import SwiftUI
 
 /// Owns the capture session, records constant-frame-rate video, and saves to the camera roll.
 final class CameraModel: NSObject, ObservableObject {
-    enum SaveState: Equatable { case idle, saving, saved, failed }
+    enum SaveState: Equatable { case idle, reviewing, saving, saved, failed }
 
     @Published var isRecording = false
     @Published var saveState: SaveState = .idle
+    /// The just-finished take, awaiting a Save / Redo decision.
+    @Published var pendingURL: URL?
     @Published var permissionDenied = false
     @Published var isFront = true
     @Published var elapsed: TimeInterval = 0
@@ -19,6 +21,8 @@ final class CameraModel: NSObject, ObservableObject {
     private var videoInput: AVCaptureDeviceInput?
     private var position: AVCaptureDevice.Position = .front
     private var timer: Timer?
+    /// Computes the correct upright rotation angle for the current device.
+    private var rotationCoordinator: AVCaptureDevice.RotationCoordinator?
 
     // MARK: - Setup
 
@@ -47,6 +51,7 @@ final class CameraModel: NSObject, ObservableObject {
                 videoInput = input
             }
             lockFrameRate(device, fps: 30)
+            rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
         }
 
         if let mic = AVCaptureDevice.default(for: .audio),
@@ -95,6 +100,7 @@ final class CameraModel: NSObject, ObservableObject {
                     self.videoInput = input
                 }
                 self.lockFrameRate(device, fps: 30)
+                self.rotationCoordinator = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
             }
             self.session.commitConfiguration()
             let front = self.position == .front
@@ -108,8 +114,11 @@ final class CameraModel: NSObject, ObservableObject {
         sessionQueue.async { [weak self] in
             guard let self, !self.movieOutput.isRecording else { return }
             if let connection = self.movieOutput.connection(with: .video) {
-                if connection.isVideoRotationAngleSupported(90) {
-                    connection.videoRotationAngle = 90   // portrait
+                // Use the device's true upright angle (not a hard-coded 90°,
+                // which recorded sideways on this device).
+                let angle = self.rotationCoordinator?.videoRotationAngleForHorizonLevelCapture ?? 90
+                if connection.isVideoRotationAngleSupported(angle) {
+                    connection.videoRotationAngle = angle
                 }
                 connection.automaticallyAdjustsVideoMirroring = false
                 connection.isVideoMirrored = (self.position == .front)
@@ -149,6 +158,22 @@ final class CameraModel: NSObject, ObservableObject {
     private func stopTimer() {
         timer?.invalidate()
         timer = nil
+    }
+
+    // MARK: - Save / Redo decision
+
+    /// Save the take that's awaiting review to the camera roll.
+    func savePending() {
+        guard let url = pendingURL else { return }
+        pendingURL = nil
+        save(url)
+    }
+
+    /// Throw away the take that's awaiting review and return to filming.
+    func discardPending() {
+        if let url = pendingURL { try? FileManager.default.removeItem(at: url) }
+        pendingURL = nil
+        saveState = .idle
     }
 
     // MARK: - Save to Photos
@@ -194,6 +219,10 @@ extension CameraModel: AVCaptureFileOutputRecordingDelegate {
             DispatchQueue.main.async { self.saveState = .failed }
             return
         }
-        save(outputFileURL)
+        // Hold the take and let the user choose Save or Redo.
+        DispatchQueue.main.async {
+            self.pendingURL = outputFileURL
+            self.saveState = .reviewing
+        }
     }
 }

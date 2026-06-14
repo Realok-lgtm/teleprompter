@@ -7,10 +7,12 @@ struct ContentView: View {
     @AppStorage("script") private var script = ""
     @AppStorage("speed") private var speed = 5.0
     @AppStorage("fontSize") private var fontSize = 44.0
-    @AppStorage("fontChoice") private var fontChoice = "sans"
+    @AppStorage("stackWords") private var stackWords = false
+    @AppStorage("showGuide") private var showGuide = false
 
     @State private var showEditor = false
     @State private var editingInline = false
+    @State private var showClearConfirm = false
     @State private var dragging = false
     @State private var dragStart: CGFloat = 0
     @State private var contentHeight: CGFloat = 0
@@ -18,6 +20,23 @@ struct ContentView: View {
     @FocusState private var inlineFocused: Bool
 
     private let placeholder = "Tap anywhere to add your script"
+    /// Vertical position of the red reading-line guide (fraction of screen height).
+    private let guideFraction: CGFloat = 0.30
+
+    /// What the teleprompter renders: one word per line in stack mode, with a
+    /// blank line after any word that ends a sentence (. ! ?).
+    private var displayScript: String {
+        guard stackWords else { return script }
+        let words = script.split(whereSeparator: { $0 == " " || $0 == "\n" || $0 == "\t" })
+        var lines: [String] = []
+        for word in words {
+            lines.append(String(word))
+            if let last = word.last, ".!?".contains(last) {
+                lines.append("")   // gap between sentences
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
 
     var body: some View {
         ZStack {
@@ -28,6 +47,8 @@ struct ContentView: View {
 
             prompter
 
+            if showGuide && !editingInline { guideLine }
+
             VStack {
                 if camera.isRecording { recordingPill }
                 Spacer()
@@ -35,6 +56,7 @@ struct ContentView: View {
             }
             .padding(.top, 8)
 
+            if camera.saveState == .reviewing { reviewOverlay }
             if camera.saveState == .saved { savedOverlay }
             if camera.permissionDenied { permissionOverlay }
         }
@@ -86,13 +108,14 @@ struct ContentView: View {
                         .onTapGesture { startInlineEditing() }
                 } else {
                     let topPad = geo.size.height * 0.5
-                    Text(script)
+                    Text(displayScript)
                         .font(promptFont)
                         .foregroundStyle(.white)
                         .multilineTextAlignment(.center)
                         .shadow(color: .black.opacity(0.85), radius: 6, y: 2)
                         .frame(maxWidth: .infinity)
                         .padding(.horizontal, 22)
+                        .fixedSize(horizontal: false, vertical: true)  // full height, no truncation
                         .padding(.top, topPad)
                         .offset(y: -scroller.offset)
                         .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
@@ -102,20 +125,26 @@ struct ContentView: View {
                         .gesture(dragGesture)
                 }
 
-                // Always-present, invisible height measurer. Keeps the scroll
-                // range (maxOffset) correct no matter which branch is showing,
-                // so Play always knows how far to scroll.
-                Text(script.isEmpty ? " " : script)
-                    .font(promptFont)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .padding(.horizontal, 22)
-                    .background(
-                        GeometryReader { g in
-                            Color.clear.preference(key: HeightKey.self, value: g.size.height)
-                        }
-                    )
-                    .opacity(0)
+                // Always-present, invisible height measurer, isolated in an
+                // overlay so its full height never disturbs the visible layout.
+                // Keeps maxOffset correct so Play always knows how far to scroll.
+                Color.clear
+                    .frame(width: geo.size.width, height: geo.size.height)
+                    .overlay(alignment: .top) {
+                        Text(displayScript.isEmpty ? " " : displayScript)
+                            .font(promptFont)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 22)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .background(
+                                GeometryReader { g in
+                                    Color.clear.preference(key: HeightKey.self, value: g.size.height)
+                                }
+                            )
+                            .opacity(0)
+                    }
+                    .clipped()
                     .allowsHitTesting(false)
             }
             .onPreferenceChange(HeightKey.self) { h in
@@ -151,12 +180,7 @@ struct ContentView: View {
     }
 
     private var promptFont: Font {
-        switch fontChoice {
-        case "serif": return .system(size: fontSize, weight: .bold, design: .serif)
-        case "mono": return .system(size: fontSize, weight: .bold, design: .monospaced)
-        case "heavy": return .system(size: fontSize, weight: .black)
-        default: return .system(size: fontSize, weight: .bold)
-        }
+        .system(size: fontSize, weight: .bold)
     }
 
     // MARK: - Controls
@@ -180,20 +204,18 @@ struct ContentView: View {
             slider(title: "Speed", value: $speed, range: 1...20, step: 1, label: "\(Int(speed))")
             slider(title: "Size", value: $fontSize, range: 24...140, step: 2, label: "\(Int(fontSize))")
 
-            HStack(spacing: 12) {
-                Picker("Font", selection: $fontChoice) {
-                    Text("Sans").tag("sans")
-                    Text("Serif").tag("serif")
-                    Text("Mono").tag("mono")
-                    Text("Heavy").tag("heavy")
-                }
-                .pickerStyle(.segmented)
-
+            HStack(spacing: 10) {
                 Button { scroller.restart() } label: {
                     Image(systemName: "arrow.counterclockwise").iconChip()
                 }
                 Button { camera.flip() } label: {
                     Image(systemName: "arrow.triangle.2.circlepath.camera").iconChip()
+                }
+                Button { stackWords.toggle() } label: {
+                    Image(systemName: "text.aligncenter").iconChip(active: stackWords, tint: .blue)
+                }
+                Button { showGuide.toggle() } label: {
+                    Image(systemName: "scope").iconChip(active: showGuide, tint: .red)
                 }
                 Button { showEditor = true } label: {
                     Image(systemName: "pencil").iconChip()
@@ -222,6 +244,51 @@ struct ContentView: View {
     }
 
     // MARK: - Overlays
+
+    private var guideLine: some View {
+        GeometryReader { geo in
+            Rectangle()
+                .fill(Color.red)
+                .frame(height: 3)
+                .shadow(color: .black.opacity(0.6), radius: 2, y: 1)
+                .position(x: geo.size.width / 2, y: geo.size.height * guideFraction)
+        }
+        .allowsHitTesting(false)
+        .ignoresSafeArea()
+    }
+
+    private var reviewOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.92).ignoresSafeArea()
+            VStack(spacing: 18) {
+                Image(systemName: "film")
+                    .font(.system(size: 80))
+                    .foregroundStyle(.white)
+                Text("Recording finished")
+                    .font(.title2).bold()
+                Text("Save it to your camera roll, or redo the take.")
+                    .font(.callout).foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center).padding(.horizontal, 40)
+                HStack(spacing: 12) {
+                    Button {
+                        camera.discardPending()
+                    } label: {
+                        Label("Redo", systemImage: "arrow.counterclockwise")
+                    }
+                    .buttonStyle(BigButton(tint: .red, filled: false))
+
+                    Button {
+                        camera.savePending()
+                    } label: {
+                        Label("Save", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(BigButton(tint: .blue, filled: true))
+                }
+                .padding(.horizontal, 30)
+                .padding(.top, 6)
+            }
+        }
+    }
 
     private var recordingPill: some View {
         HStack(spacing: 8) {
@@ -292,9 +359,19 @@ struct ContentView: View {
             .navigationTitle("Script")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button(role: .destructive) { showClearConfirm = true } label: {
+                        Text("Clear")
+                    }
+                    .disabled(script.isEmpty)
+                }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done") { showEditor = false }
                 }
+            }
+            .confirmationDialog("Clear all text?", isPresented: $showClearConfirm, titleVisibility: .visible) {
+                Button("Clear all", role: .destructive) { script = "" }
+                Button("Cancel", role: .cancel) {}
             }
             .onAppear { editorFocused = true }
         }
@@ -339,10 +416,10 @@ struct BigButton: ButtonStyle {
 }
 
 private extension Image {
-    func iconChip() -> some View {
+    func iconChip(active: Bool = false, tint: Color = .white) -> some View {
         self.font(.title3)
             .frame(width: 50, height: 50)
-            .background(.white.opacity(0.16))
+            .background(active ? tint : Color.white.opacity(0.16))
             .foregroundStyle(.white)
             .clipShape(RoundedRectangle(cornerRadius: 14))
     }
